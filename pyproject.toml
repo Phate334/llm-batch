@@ -10,6 +10,7 @@ description = ""
 requires-python = ">=3.13"
 dependencies = [
     "mitmproxy>=12.2.1",
+    "orjson>=3.11.7",
     "pydantic>=2.12.4",
     "pydantic-settings>=2.12.0",
 ]
