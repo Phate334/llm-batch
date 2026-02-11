@@ -11,16 +11,17 @@ services:
     command: "tail -f /dev/null"
 
   proxy:
-    image: mitmproxy/mitmproxy:12.2.1
+    build:
+      context: .
+      dockerfile: Dockerfile
     expose:
       - 8080
     volumes:
-      - ./src/openai_logger.py:/app/openai_logger.py:ro
+      - ./src:/app/src:ro
       - ./data:/app/data
-    user: "0:0"
     environment:
       - OPENAI_LOGGER_DATA_DIR=/app/data
-    command: [ "mitmdump", "-s", "/app/openai_logger.py" ]
+    command: [ "mitmdump", "-s", "./src/openai_logger.py" ]
 
   llm:
     image: ghcr.io/ggml-org/llama.cpp:server-b7897

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,6 +11,7 @@ class Settings(BaseSettings):
     )
 
     project_name: str = "llm-batch"
+    data_dir: Path = Path("data")
+
 
 settings = Settings()
-
