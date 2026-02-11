@@ -154,7 +154,7 @@ def _append_jsonl(path: Path, payload: Any) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as handle:
-            json.dump(payload, handle, ensure_ascii=True)
+            json.dump(payload, handle, ensure_ascii=False)
             handle.write("\n")
     except OSError as exc:
         logger.warning("Failed to write JSONL to %s: %s", path, exc)
@@ -176,8 +176,6 @@ class OpenAILogger:
         payload = _read_json(body_text)
         if payload is None:
             return
-        # if payload.get("stream") is True:
-        #     return
 
         flow.metadata["openai_chat_request"] = payload
         _append_jsonl(INPUT_PATH, payload)
