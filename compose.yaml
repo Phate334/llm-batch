@@ -22,7 +22,6 @@ services:
     user: "${UID:-0}:${GID:-0}"
     environment:
       - OPENAI_LOGGER_DATA_DIR=/app/data
-    command: [ "mitmdump", "-s", "./src/openai_logger.py" ]
 
   llm:
     image: ghcr.io/ggml-org/llama.cpp:server-b7897
