@@ -26,6 +26,8 @@ jobs:
 
       - name: Checkout vLLM
         uses: actions/checkout@v4
+        env:
+          HOME: ${{ github.workspace }}
         with:
           repository: vllm-project/vllm
           ref: ${{ env.VLLM_VERSION }}
