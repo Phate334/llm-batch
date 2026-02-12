@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any
 
+import orjson
 from mitmproxy import http
 
 from src.core.config import settings
@@ -26,8 +26,8 @@ def _is_supported_endpoint(path: str) -> bool:
 
 def _read_json(text: str) -> Any | None:
     try:
-        return json.loads(text)
-    except json.JSONDecodeError:
+        return orjson.loads(text)
+    except orjson.JSONDecodeError:
         return None
 
 
@@ -153,9 +153,9 @@ def _aggregate_streamed_response(events: list[dict[str, Any]]) -> dict[str, Any]
 def _append_jsonl(path: Path, payload: Any) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as handle:
-            json.dump(payload, handle, ensure_ascii=False)
-            handle.write("\n")
+        with path.open("ab") as handle:
+            handle.write(orjson.dumps(payload))
+            handle.write(b"\n")
     except OSError as exc:
         logger.warning("Failed to write JSONL to %s: %s", path, exc)
 
