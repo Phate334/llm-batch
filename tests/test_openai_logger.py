@@ -4,7 +4,6 @@ import tempfile
 from pathlib import Path
 
 import orjson
-import pytest
 
 from src.openai_logger import _append_jsonl, _read_json
 
@@ -41,9 +40,9 @@ class TestAppendJsonl:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "test.jsonl"
             payload = {"key": "value"}
-            
+
             _append_jsonl(path, payload)
-            
+
             content = path.read_bytes()
             lines = content.strip().split(b"\n")
             assert len(lines) == 1
@@ -58,10 +57,10 @@ class TestAppendJsonl:
                 {"id": 2, "name": "second"},
                 {"id": 3, "name": "third"},
             ]
-            
+
             for payload in payloads:
                 _append_jsonl(path, payload)
-            
+
             content = path.read_bytes()
             lines = content.strip().split(b"\n")
             assert len(lines) == 3
@@ -73,9 +72,9 @@ class TestAppendJsonl:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "test.jsonl"
             payload = {"message": "Hello 世界", "emoji": "🌟"}
-            
+
             _append_jsonl(path, payload)
-            
+
             content = path.read_bytes()
             lines = content.strip().split(b"\n")
             assert len(lines) == 1
@@ -86,9 +85,9 @@ class TestAppendJsonl:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "subdir" / "test.jsonl"
             payload = {"key": "value"}
-            
+
             _append_jsonl(path, payload)
-            
+
             assert path.exists()
             content = path.read_bytes()
             lines = content.strip().split(b"\n")
