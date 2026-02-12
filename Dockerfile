@@ -43,4 +43,4 @@ USER nonroot
 # Use `/app` as the working directory
 WORKDIR /app
 
-CMD []
+CMD ["mitmdump", "-s", "./src/openai_logger.py"]
