@@ -11,9 +11,7 @@ services:
     command: "tail -f /dev/null"
 
   proxy:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/phate334/llm-batch-proxy:latest
     expose:
       - 8080
     volumes:
