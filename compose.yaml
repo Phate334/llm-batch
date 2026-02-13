@@ -7,8 +7,8 @@ services:
       - HTTP_PROXY=http://proxy:8080
     env_file:
       - .env
-    entrypoint: ""
-    command: "tail -f /dev/null"
+    entrypoint: "tail"
+    command: "-f /dev/null"
 
   proxy:
     image: ghcr.io/phate334/llm-batch-proxy:latest
