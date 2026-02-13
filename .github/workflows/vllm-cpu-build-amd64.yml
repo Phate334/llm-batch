@@ -7,6 +7,10 @@ on:
         description: "vLLM git tag or branch (e.g., v0.15.1)"
         required: true
         default: "v0.15.1"
+      max_jobs:
+        description: "Parallel C/C++ build jobs for setup.py"
+        required: true
+        default: "4"
 
 permissions:
   contents: read
@@ -17,6 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       VLLM_VERSION: ${{ inputs.vllm_version }}
+      MAX_JOBS: ${{ inputs.max_jobs }}
     steps:
       - name: Normalize GHCR owner
         id: vars
@@ -49,9 +54,12 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.cpu
+          target: vllm-openai
           platforms: linux/amd64
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            max_jobs=${{ env.MAX_JOBS }}
           tags: |
             ${{ steps.vars.outputs.image_name }}:${{ env.VLLM_VERSION }}-cpu-amd64
