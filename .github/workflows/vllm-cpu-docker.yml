@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   publish-manifest:
-    runs-on: [self-hosted, linux, docker, buildx, amd64]
+    runs-on: ubuntu-24.04
     env:
       VLLM_VERSION: ${{ inputs.vllm_version }}
     steps:
