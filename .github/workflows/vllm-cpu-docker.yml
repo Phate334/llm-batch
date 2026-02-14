@@ -23,7 +23,7 @@ jobs:
         shell: bash
         run: |
           echo "ghcr_owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
-          echo "image_name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/vllm" >> "$GITHUB_OUTPUT"
+          echo "image_name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/llm-bench" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
