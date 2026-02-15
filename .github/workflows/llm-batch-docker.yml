@@ -1,0 +1,76 @@
+name: Publish llm-batch manifest
+
+on:
+  workflow_dispatch:
+    inputs:
+      vllm_version:
+        description: "vLLM git tag or branch (e.g., v0.15.1)"
+        required: true
+        default: "v0.15.1"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-manifest:
+    runs-on: ubuntu-24.04
+    env:
+      VLLM_VERSION: ${{ inputs.vllm_version }}
+    steps:
+      - name: Normalize GHCR owner
+        id: vars
+        shell: bash
+        run: |
+          echo "ghcr_owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "image_name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/llm-batch" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read project version from pyproject.toml
+        id: project_version
+        shell: bash
+        run: |
+          set -euo pipefail
+          project_version=$(python3 - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+          print(data["project"]["version"])
+          PY
+          )
+          echo "tag_version=v${project_version}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ steps.vars.outputs.ghcr_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify amd64 and arm64 tags exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "${{ steps.vars.outputs.image_name }}:${{ steps.project_version.outputs.tag_version }}-cpu-amd64" > /dev/null
+          docker buildx imagetools inspect "${{ steps.vars.outputs.image_name }}:${{ steps.project_version.outputs.tag_version }}-cpu-arm64" > /dev/null
+
+      - name: Create multi-arch manifest tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            -t "${{ steps.vars.outputs.image_name }}:${{ steps.project_version.outputs.tag_version }}" \
+            "${{ steps.vars.outputs.image_name }}:${{ steps.project_version.outputs.tag_version }}-cpu-amd64" \
+            "${{ steps.vars.outputs.image_name }}:${{ steps.project_version.outputs.tag_version }}-cpu-arm64"
+
+      - name: Verify final manifest platforms
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "${{ steps.vars.outputs.image_name }}:${{ steps.project_version.outputs.tag_version }}"
