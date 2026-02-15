@@ -1,28 +1,18 @@
 services:
-  vllm:
-    image: ghcr.io/phate334/vllm:v0.15.1-cpu
-    volumes:
-      - cache:/root/.cache
-    environment:
-      - HTTP_PROXY=http://proxy:8080
-    env_file:
-      - .env
-    entrypoint: "tail"
-    command: "-f /dev/null"
-
-  proxy:
-    image: ghcr.io/phate334/llm-batch-proxy:latest
-    expose:
-      - 8080
+  runner:
+    image: ghcr.io/phate334/llm-batch:v0.1.0
     volumes:
       - ./src:/app/src:ro
       - ./data:/app/data
     user: "${UID:-0}:${GID:-0}"
     environment:
       - OPENAI_LOGGER_DATA_DIR=/app/data
+      - HTTP_PROXY=http://localhost:8080
+    env_file:
+      - .env
 
   llm:
-    image: ghcr.io/ggml-org/llama.cpp:server-b7897
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda-b7897
     ports:
       - "8080:8080"
     volumes:
@@ -31,6 +21,8 @@ services:
       - LLAMA_ARG_HF_REPO=lmstudio-community/gemma-3-1B-it-qat-GGUF
       - LLAMA_ARG_N_PARALLEL=2
       - LLAMA_ARG_CTX_SIZE=4096
+    devices:
+      - nvidia.com/gpu=all
 
 volumes:
   cache:
