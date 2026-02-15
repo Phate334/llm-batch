@@ -35,7 +35,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     && curl -fsSL \
     "https://raw.githubusercontent.com/vllm-project/vllm/${VLLM_VERSION}/requirements/cpu.txt" \
     -o /tmp/vllm-requirements/cpu.txt \
-    && uv pip install -r /tmp/vllm-requirements/cpu.txt \
+    && uv pip install --extra-index-url https://download.pytorch.org/whl/cpu -r /tmp/vllm-requirements/cpu.txt \
     && uv pip install --no-deps "vllm[bench]==${VLLM_VERSION}"
 
 
