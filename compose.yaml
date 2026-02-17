@@ -1,6 +1,6 @@
 services:
   batch:
-    image: ghcr.io/phate334/llm-batch:v0.1.0
+    image: ghcr.io/phate334/llm-batch:v0.1.1
     volumes:
       - ./src:/app/src:ro
       - ./data:/app/data
