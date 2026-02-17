@@ -128,3 +128,22 @@ dmypy.json
 # Custom
 .DS_Store
 data/
+
+# VCS / editor
+.git/
+.github/
+.gitignore
+.vscode/
+.idea/
+
+# Python tooling caches
+.ruff_cache/
+
+# Local env overrides
+.env.*
+
+# Project files not required in runtime image
+tests/
+runner/
+api.http
+compose.yaml
