@@ -254,6 +254,8 @@ class OpenAILogger:
     def response(self, flow: http.HTTPFlow) -> None:
         if REQUEST_METADATA_KEY not in flow.metadata:
             return
+        if flow.response is None:
+            return
 
         storage_paths = flow.metadata.get(STORAGE_METADATA_KEY)
         if not isinstance(storage_paths, StoragePaths):
