@@ -1,7 +1,5 @@
 """Log storage routing and JSONL writing."""
 
-from __future__ import annotations
-
 import logging
 import string
 from dataclasses import dataclass

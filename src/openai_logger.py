@@ -1,7 +1,5 @@
 """Mitmproxy addon for logging OpenAI-compatible traffic."""
 
-from __future__ import annotations
-
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Protocol
