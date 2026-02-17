@@ -25,6 +25,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --locked --no-install-project --no-dev
+COPY . /app
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     mkdir -p /tmp/vllm-requirements \
@@ -37,8 +40,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     && uv pip install --index-strategy unsafe-best-match --extra-index-url https://download.pytorch.org/whl/cpu -r /tmp/vllm-requirements/cpu.txt \
     && uv pip install "vllm[bench]==${VLLM_VERSION}"
 
-COPY src /app/src
-
 
 # Then, use a final image without uv
 FROM python:3.13-slim-bookworm
@@ -50,9 +51,8 @@ FROM python:3.13-slim-bookworm
 RUN groupadd --system --gid 999 nonroot \
     && useradd --system --gid 999 --uid 999 --create-home nonroot
 
-# Copy runtime dependencies and source code from the builder
-COPY --from=builder --chown=nonroot:nonroot /app/.venv /app/.venv
-COPY --from=builder --chown=nonroot:nonroot /app/src /app/src
+# Copy the application from the builder
+COPY --from=builder --chown=nonroot:nonroot /app /app
 
 # Place executables in the environment at the front of the path
 ENV PATH="/app/.venv/bin:$PATH"
