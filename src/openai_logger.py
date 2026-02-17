@@ -1,41 +1,81 @@
-"""Mitmproxy addon to log OpenAI-compatible chat completion traffic."""
+"""Mitmproxy addon for logging OpenAI-compatible traffic."""
 
 from __future__ import annotations
 
-import logging
-from pathlib import Path
-from typing import Any
+from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import Any, Protocol
 
 import orjson
 from mitmproxy import http
 
 from src.core.config import settings
+from src.log_storage import StoragePaths, StorageRouter, append_jsonl
 
-SUPPORTED_ENDPOINT_SUFFIXES = ("/chat/completions",)
-
-INPUT_PATH = settings.data_dir / "input.jsonl"
-OUTPUT_PATH = settings.data_dir / "output.jsonl"
-
-logger = logging.getLogger(__name__)
+REQUEST_METADATA_KEY = "openai_request_payload"
+STORAGE_METADATA_KEY = "openai_storage_paths"
 
 
-def _is_supported_endpoint(path: str) -> bool:
-    clean_path = path.split("?", 1)[0]
-    return any(clean_path.endswith(suffix) for suffix in SUPPORTED_ENDPOINT_SUFFIXES)
+@dataclass(frozen=True)
+class EndpointSpec:
+    """Describe an OpenAI-compatible API endpoint."""
+
+    name: str
+    suffixes: tuple[str, ...]
 
 
-def _read_json(text: str) -> Any | None:
+def _normalize_path(path: str) -> str:
+    return path.split("?", 1)[0]
+
+
+class EndpointRegistry:
+    """Match request paths to supported OpenAI endpoint specs."""
+
+    def __init__(self, endpoints: Iterable[EndpointSpec]) -> None:
+        self._endpoints = list(endpoints)
+
+    def match(self, path: str) -> EndpointSpec | None:
+        clean_path = _normalize_path(path)
+        for endpoint in self._endpoints:
+            if any(clean_path.endswith(suffix) for suffix in endpoint.suffixes):
+                return endpoint
+        return None
+
+    def supports(self, path: str) -> bool:
+        return self.match(path) is not None
+
+
+def default_endpoint_registry() -> EndpointRegistry:
+    """Build the default registry with chat completions support."""
+
+    return EndpointRegistry(
+        endpoints=(
+            EndpointSpec(
+                name="chat.completions",
+                suffixes=("/chat/completions",),
+            ),
+        )
+    )
+
+
+def read_json(text: str) -> Any | None:
+    """Parse JSON text and return None on decode errors."""
+
     try:
         return orjson.loads(text)
     except orjson.JSONDecodeError:
         return None
 
 
-def _is_event_stream(content_type: str) -> bool:
+def is_event_stream(content_type: str) -> bool:
+    """Return True when the response content type indicates SSE."""
+
     return "text/event-stream" in content_type.lower()
 
 
-def _parse_sse_events(body_text: str) -> list[dict[str, Any]]:
+def parse_sse_events(body_text: str) -> list[dict[str, Any]]:
+    """Parse SSE response text into a list of JSON event payloads."""
+
     events: list[dict[str, Any]] = []
     for raw_line in body_text.splitlines():
         line = raw_line.strip()
@@ -46,7 +86,7 @@ def _parse_sse_events(body_text: str) -> list[dict[str, Any]]:
             continue
         if payload_text == "[DONE]":
             break
-        payload = _read_json(payload_text)
+        payload = read_json(payload_text)
         if isinstance(payload, dict):
             events.append(payload)
     return events
@@ -68,7 +108,11 @@ def _merge_tool_call(target: dict[str, Any], delta: dict[str, Any]) -> None:
             )
 
 
-def _aggregate_streamed_response(events: list[dict[str, Any]]) -> dict[str, Any] | None:
+def aggregate_streamed_response(
+    events: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Aggregate streamed chat completion events into one response payload."""
+
     if not events:
         return None
 
@@ -150,38 +194,69 @@ def _aggregate_streamed_response(events: list[dict[str, Any]]) -> dict[str, Any]
     return response
 
 
-def _append_jsonl(path: Path, payload: Any) -> None:
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("ab") as handle:
-            handle.write(orjson.dumps(payload))
-            handle.write(b"\n")
-    except OSError as exc:
-        logger.warning("Failed to write JSONL to %s: %s", path, exc)
+class RequestPreprocessor(Protocol):
+    """Callable signature for request preprocessors."""
+
+    def __call__(
+        self, payload: dict[str, Any], flow: http.HTTPFlow
+    ) -> dict[str, Any] | None: ...
+
+
+def _apply_preprocessors(
+    payload: dict[str, Any],
+    flow: http.HTTPFlow,
+    preprocessors: Iterable[RequestPreprocessor],
+) -> dict[str, Any] | None:
+    for preprocessor in preprocessors:
+        updated = preprocessor(payload, flow)
+        if updated is None:
+            return None
+        payload = updated
+    return payload
 
 
 class OpenAILogger:
     """Log OpenAI API request/response bodies to JSONL files."""
 
+    def __init__(
+        self,
+        endpoint_registry: EndpointRegistry | None = None,
+        storage_router: StorageRouter | None = None,
+        request_preprocessors: Iterable[RequestPreprocessor] | None = None,
+    ) -> None:
+        self._endpoint_registry = endpoint_registry or default_endpoint_registry()
+        self._storage_router = storage_router or StorageRouter(settings.data_dir)
+        self._request_preprocessors = list(request_preprocessors or [])
+
     def request(self, flow: http.HTTPFlow) -> None:
         if flow.request.method.upper() != "POST":
             return
-        if not _is_supported_endpoint(flow.request.path):
+        if not self._endpoint_registry.supports(flow.request.path):
             return
 
         body_text = flow.request.get_text(strict=False)
         if not body_text:
             return
 
-        payload = _read_json(body_text)
+        payload = read_json(body_text)
+        if not isinstance(payload, dict):
+            return
+
+        payload = _apply_preprocessors(payload, flow, self._request_preprocessors)
         if payload is None:
             return
 
-        flow.metadata["openai_chat_request"] = payload
-        _append_jsonl(INPUT_PATH, payload)
+        storage_paths = self._storage_router.resolve(flow)
+        flow.metadata[REQUEST_METADATA_KEY] = payload
+        flow.metadata[STORAGE_METADATA_KEY] = storage_paths
+        append_jsonl(storage_paths.input_path, payload)
 
     def response(self, flow: http.HTTPFlow) -> None:
-        if "openai_chat_request" not in flow.metadata:
+        if REQUEST_METADATA_KEY not in flow.metadata:
+            return
+
+        storage_paths = flow.metadata.get(STORAGE_METADATA_KEY)
+        if not isinstance(storage_paths, StoragePaths):
             return
 
         body_text = flow.response.get_text(strict=False)
@@ -189,19 +264,19 @@ class OpenAILogger:
             return
 
         content_type = flow.response.headers.get("content-type", "")
-        if _is_event_stream(content_type):
-            events = _parse_sse_events(body_text)
-            payload = _aggregate_streamed_response(events)
+        if is_event_stream(content_type):
+            events = parse_sse_events(body_text)
+            payload = aggregate_streamed_response(events)
             if payload is None:
                 return
-            _append_jsonl(OUTPUT_PATH, payload)
+            append_jsonl(storage_paths.output_path, payload)
             return
 
-        payload = _read_json(body_text)
+        payload = read_json(body_text)
         if payload is None:
             return
 
-        _append_jsonl(OUTPUT_PATH, payload)
+        append_jsonl(storage_paths.output_path, payload)
 
 
 addons = [OpenAILogger()]

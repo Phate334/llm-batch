@@ -5,7 +5,8 @@ from pathlib import Path
 
 import orjson
 
-from src.openai_logger import _append_jsonl, _read_json
+from src.log_storage import append_jsonl
+from src.openai_logger import read_json
 
 
 class TestReadJson:
@@ -13,22 +14,22 @@ class TestReadJson:
 
     def test_valid_json(self):
         """Test parsing valid JSON string."""
-        result = _read_json('{"key": "value"}')
+        result = read_json('{"key": "value"}')
         assert result == {"key": "value"}
 
     def test_valid_json_with_unicode(self):
         """Test parsing JSON with unicode characters."""
-        result = _read_json('{"message": "Hello 世界"}')
+        result = read_json('{"message": "Hello 世界"}')
         assert result == {"message": "Hello 世界"}
 
     def test_invalid_json(self):
         """Test parsing invalid JSON string."""
-        result = _read_json("invalid json")
+        result = read_json("invalid json")
         assert result is None
 
     def test_empty_string(self):
         """Test parsing empty string."""
-        result = _read_json("")
+        result = read_json("")
         assert result is None
 
 
@@ -41,7 +42,7 @@ class TestAppendJsonl:
             path = Path(tmpdir) / "test.jsonl"
             payload = {"key": "value"}
 
-            _append_jsonl(path, payload)
+            append_jsonl(path, payload)
 
             content = path.read_bytes()
             lines = content.strip().split(b"\n")
@@ -59,7 +60,7 @@ class TestAppendJsonl:
             ]
 
             for payload in payloads:
-                _append_jsonl(path, payload)
+                append_jsonl(path, payload)
 
             content = path.read_bytes()
             lines = content.strip().split(b"\n")
@@ -73,7 +74,7 @@ class TestAppendJsonl:
             path = Path(tmpdir) / "test.jsonl"
             payload = {"message": "Hello 世界", "emoji": "🌟"}
 
-            _append_jsonl(path, payload)
+            append_jsonl(path, payload)
 
             content = path.read_bytes()
             lines = content.strip().split(b"\n")
@@ -86,7 +87,7 @@ class TestAppendJsonl:
             path = Path(tmpdir) / "subdir" / "test.jsonl"
             payload = {"key": "value"}
 
-            _append_jsonl(path, payload)
+            append_jsonl(path, payload)
 
             assert path.exists()
             content = path.read_bytes()
