@@ -44,7 +44,7 @@ def _safe_path_segment(value: str) -> str:
 class StorageRouter:
     """Resolve storage paths based on request metadata."""
 
-    def __init__(self, data_dir: Path, header_key: str | None = "x-request-id") -> None:
+    def __init__(self, data_dir: Path, header_key: str | None = "x-batch-id") -> None:
         self._data_dir = data_dir
         self._header_key = header_key.lower() if header_key else None
 
