@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llm-batch"
-version = "0.1.1"
+version = "0.2.0"
 description = ""
 
 requires-python = ">=3.13"
@@ -13,6 +13,18 @@ dependencies = [
     "orjson>=3.11.7",
     "pydantic>=2.12.4",
     "pydantic-settings>=2.12.0",
+	"aiohttp",
+	"msgspec",
+	"numpy",
+    "pandas",
+	"pillow",
+	"psutil",
+	"pyzmq",
+	"regex",
+	"tqdm",
+	"transformers",
+	"typing-extensions",
+	"urllib3",
 ]
 
 [dependency-groups]
@@ -26,8 +38,13 @@ dev = [
     "ruff>=0.14.6",
 ]
 
+[project.scripts]
+vllm = "src.vllm.entrypoints.cli.main:main"
+
 [tool.ruff]
 target-version = "py313"
+# skip the generated/benchmark-only/vllm subpackage from linting
+exclude = ["src/vllm/**"]
 
 [tool.ruff.lint.isort]
 known-first-party = [""]
@@ -79,11 +96,14 @@ addopts = "--cov=src --cov-report=term-missing --cov-report=html"
 testpaths = [
     "tests",
 ]
+markers = [
+    "integration: marks tests as integration tests",
+]
 asyncio_mode = "auto"
 
 [tool.coverage.run]
 source = ["src"]
-omit = ["tests/*"]
+omit = ["tests/*", "src/vllm/*"]
 
 [tool.coverage.report]
 exclude_lines = [
