@@ -17,3 +17,8 @@ This project uses Python 3.13.
 
 - Use `pytest` for testing.
 - Place tests in the `tests/` directory.
+
+## Chat Style
+
+- 回答問題時應該使用台灣習慣用語的正體中文。
+- 撰寫編輯檔案時應該一律使用英文。
