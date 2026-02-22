@@ -62,6 +62,12 @@ jobs:
           fi
           printf 'HF_TOKEN=%s\n' "$HF_TOKEN" > .env
 
+      - name: Export runner UID/GID for compose
+        run: |
+          echo "UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "GID=$(id -g)" >> "$GITHUB_ENV"
+          echo "Using UID=$(id -u) GID=$(id -g) for compose services"
+
       - name: Start compose services
         run: docker compose -f compose.yaml up -d llm batch
 
@@ -81,6 +87,16 @@ jobs:
 
       - name: Run integration tests
         run: RUN_INTEGRATION=1 uv run pytest -o addopts='' tests/integration -m integration -vv -rA
+
+      - name: Diagnose data permissions on failure
+        if: failure()
+        run: |
+          echo "Runner identity:"
+          id
+          echo "data directory ownership and permissions:"
+          ls -ldn data || true
+          ls -lna data || true
+          stat -c '%A %a %u:%g %n' data data/output.jsonl 2>/dev/null || true
 
       - name: Export Docker volume cache
         if: always()
