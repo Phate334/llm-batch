@@ -1,0 +1,56 @@
+name: Integration Tests
+
+on:
+  workflow_dispatch:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      RUN_INTEGRATION: "1"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Start compose services
+        run: docker compose -f compose.yaml up -d llm batch
+
+      - name: Wait for llm health
+        run: |
+          attempts=180
+          for i in $(seq 1 "$attempts"); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health || true)
+            if [ "$code" = "200" ]; then
+              echo "llm health endpoint is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "llm health endpoint did not become ready in time"
+          exit 1
+
+      - name: Run integration tests
+        run: RUN_INTEGRATION=1 uv run pytest -o addopts='' tests/integration -m integration -vv -rA
+
+      - name: Stop compose services
+        if: always()
+        run: docker compose -f compose.yaml down
