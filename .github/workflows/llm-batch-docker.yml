@@ -2,11 +2,6 @@ name: Publish llm-batch manifest
 
 on:
   workflow_dispatch:
-    inputs:
-      vllm_version:
-        description: "vLLM git tag or branch (e.g., v0.15.1)"
-        required: true
-        default: "v0.15.1"
 
 permissions:
   contents: read
@@ -15,8 +10,6 @@ permissions:
 jobs:
   publish-manifest:
     runs-on: ubuntu-24.04
-    env:
-      VLLM_VERSION: ${{ inputs.vllm_version }}
     steps:
       - name: Normalize GHCR owner
         id: vars
