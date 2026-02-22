@@ -10,6 +10,7 @@ jobs:
       contents: read
     env:
       RUN_INTEGRATION: "1"
+      COMPOSE_PROJECT_NAME: llm-batch-ci
 
     steps:
       - name: Checkout code
@@ -27,6 +28,26 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
+
+      - name: Restore Docker model cache archive
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/docker-cache.tgz
+          key: docker-model-cache-${{ runner.os }}-${{ hashFiles('compose.yaml') }}
+
+      - name: Restore Docker volume cache
+        run: |
+          mkdir -p .cache
+          if [ -f .cache/docker-cache.tgz ]; then
+            docker volume create "${COMPOSE_PROJECT_NAME}_cache"
+            docker run --rm \
+              -v "${COMPOSE_PROJECT_NAME}_cache:/volume" \
+              -v "$PWD/.cache:/backup" \
+              busybox sh -c "cd /volume && tar xzf /backup/docker-cache.tgz"
+            echo "Restored docker cache volume from archive"
+          else
+            echo "No docker cache archive found"
+          fi
 
       - name: Install dependencies
         run: uv sync --locked
@@ -50,6 +71,26 @@ jobs:
 
       - name: Run integration tests
         run: RUN_INTEGRATION=1 uv run pytest -o addopts='' tests/integration -m integration -vv -rA
+
+      - name: Export Docker volume cache
+        if: always()
+        run: |
+          mkdir -p .cache
+          if docker volume inspect "${COMPOSE_PROJECT_NAME}_cache" >/dev/null 2>&1; then
+            docker run --rm \
+              -v "${COMPOSE_PROJECT_NAME}_cache:/volume" \
+              -v "$PWD/.cache:/backup" \
+              busybox sh -c "cd /volume && tar czf /backup/docker-cache.tgz ."
+          else
+            echo "Docker volume ${COMPOSE_PROJECT_NAME}_cache does not exist, skip export"
+          fi
+
+      - name: Save Docker model cache archive
+        if: always() && hashFiles('.cache/docker-cache.tgz') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/docker-cache.tgz
+          key: docker-model-cache-${{ runner.os }}-${{ hashFiles('compose.yaml') }}
 
       - name: Stop compose services
         if: always()
