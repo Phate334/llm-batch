@@ -1,7 +1,6 @@
 services:
   batch:
-    # image: ghcr.io/phate334/llm-batch:v0.1.1
-    build: .
+    image: ghcr.io/phate334/llm-batch:v0.2.0
     volumes:
       - cache:/nonroot/.cache
       - ./data:/app/data
