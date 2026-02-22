@@ -8,8 +8,12 @@ permissions:
   packages: write
 
 jobs:
-  publish-manifest:
+  prepare:
     runs-on: ubuntu-24.04
+    outputs:
+      ghcr_owner: ${{ steps.vars.outputs.ghcr_owner }}
+      image_name: ${{ steps.vars.outputs.image_name }}
+      tag_version: ${{ steps.project_version.outputs.tag_version }}
     steps:
       - name: Normalize GHCR owner
         id: vars
@@ -36,6 +40,15 @@ jobs:
           )
           echo "tag_version=v${project_version}" >> "$GITHUB_OUTPUT"
 
+  build-amd64:
+    runs-on: ubuntu-24.04
+    needs: prepare
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -43,27 +56,85 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ steps.vars.outputs.ghcr_owner }}
+          username: ${{ needs.prepare.outputs.ghcr_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify amd64 and arm64 tags exist
+      - name: Build and push amd64 image by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          outputs: type=image,name=${{ needs.prepare.outputs.image_name }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=llm-batch-amd64
+          cache-to: type=gha,mode=max,scope=llm-batch-amd64
+
+  build-arm64:
+    runs-on: ubuntu-24.04-arm
+    needs: prepare
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ needs.prepare.outputs.ghcr_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push arm64 image by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/arm64
+          outputs: type=image,name=${{ needs.prepare.outputs.image_name }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=llm-batch-arm64
+          cache-to: type=gha,mode=max,scope=llm-batch-arm64
+
+  publish-manifest:
+    runs-on: ubuntu-24.04
+    needs:
+      - prepare
+      - build-amd64
+      - build-arm64
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ needs.prepare.outputs.ghcr_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify amd64 and arm64 digests exist
         shell: bash
         run: |
           set -euo pipefail
-          docker buildx imagetools inspect "${{ steps.vars.outputs.image_name }}:${{ steps.project_version.outputs.tag_version }}-cpu-amd64" > /dev/null
-          docker buildx imagetools inspect "${{ steps.vars.outputs.image_name }}:${{ steps.project_version.outputs.tag_version }}-cpu-arm64" > /dev/null
+          docker buildx imagetools inspect "${{ needs.prepare.outputs.image_name }}@${{ needs.build-amd64.outputs.digest }}" > /dev/null
+          docker buildx imagetools inspect "${{ needs.prepare.outputs.image_name }}@${{ needs.build-arm64.outputs.digest }}" > /dev/null
 
       - name: Create multi-arch manifest tag
         shell: bash
         run: |
           set -euo pipefail
           docker buildx imagetools create \
-            -t "${{ steps.vars.outputs.image_name }}:${{ steps.project_version.outputs.tag_version }}" \
-            "${{ steps.vars.outputs.image_name }}:${{ steps.project_version.outputs.tag_version }}-cpu-amd64" \
-            "${{ steps.vars.outputs.image_name }}:${{ steps.project_version.outputs.tag_version }}-cpu-arm64"
+            -t "${{ needs.prepare.outputs.image_name }}:${{ needs.prepare.outputs.tag_version }}" \
+            "${{ needs.prepare.outputs.image_name }}@${{ needs.build-amd64.outputs.digest }}" \
+            "${{ needs.prepare.outputs.image_name }}@${{ needs.build-arm64.outputs.digest }}"
 
       - name: Verify final manifest platforms
         shell: bash
         run: |
           set -euo pipefail
-          docker buildx imagetools inspect "${{ steps.vars.outputs.image_name }}:${{ steps.project_version.outputs.tag_version }}"
+          docker buildx imagetools inspect "${{ needs.prepare.outputs.image_name }}:${{ needs.prepare.outputs.tag_version }}"
