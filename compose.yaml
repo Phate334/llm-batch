@@ -1,8 +1,9 @@
 services:
   batch:
-    image: ghcr.io/phate334/llm-batch:v0.1.1
+    # image: ghcr.io/phate334/llm-batch:v0.1.1
+    build: .
     volumes:
-      - ./src:/app/src:ro
+      - cache:/nonroot/.cache
       - ./data:/app/data
     user: "${UID:-0}:${GID:-0}"
     environment:
@@ -12,7 +13,7 @@ services:
       - .env
 
   llm:
-    image: ghcr.io/ggml-org/llama.cpp:server-cuda-b7897
+    image: ghcr.io/ggml-org/llama.cpp:server-b7897
     ports:
       - "8080:8080"
     volumes:
@@ -21,8 +22,6 @@ services:
       - LLAMA_ARG_HF_REPO=lmstudio-community/gemma-3-1B-it-qat-GGUF
       - LLAMA_ARG_N_PARALLEL=2
       - LLAMA_ARG_CTX_SIZE=4096
-    devices:
-      - nvidia.com/gpu=all
 
 volumes:
   cache:
