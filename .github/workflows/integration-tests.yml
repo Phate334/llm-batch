@@ -52,6 +52,16 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
+      - name: Prepare .env for compose
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "Repository secret HF_TOKEN is required"
+            exit 1
+          fi
+          printf 'HF_TOKEN=%s\n' "$HF_TOKEN" > .env
+
       - name: Start compose services
         run: docker compose -f compose.yaml up -d llm batch
 
@@ -95,3 +105,7 @@ jobs:
       - name: Stop compose services
         if: always()
         run: docker compose -f compose.yaml down
+
+      - name: Cleanup temporary .env
+        if: always()
+        run: rm -f .env
