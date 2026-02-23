@@ -61,6 +61,13 @@ jobs:
           echo "llm health endpoint did not become ready in time"
           exit 1
 
+      - name: Prepare writable data directory
+        run: |
+          mkdir -p data
+          rm -f data/input.jsonl data/output.jsonl
+          chmod 0777 data
+          ls -ldn data
+
       - name: Run integration tests
         run: RUN_INTEGRATION=1 uv run pytest -o addopts='' tests/integration -m integration -vv -rA
 

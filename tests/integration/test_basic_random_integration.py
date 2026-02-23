@@ -15,8 +15,7 @@ def test_basic_random_output_exists_and_non_empty() -> None:
         "compose",
         "-f",
         "compose.yaml",
-        "run",
-        "--rm",
+        "exec",
         "-T",
         "batch",
         "vllm",
@@ -41,9 +40,20 @@ def test_basic_random_output_exists_and_non_empty() -> None:
     ]
 
     completed = subprocess.run(command, check=False, capture_output=True, text=True)
-    assert completed.returncode == 0, completed.stderr
+    assert completed.returncode == 0, (
+        "Command failed with non-zero exit code.\n"
+        f"command={' '.join(command)}\n"
+        f"stdout:\n{completed.stdout}\n"
+        f"stderr:\n{completed.stderr}"
+    )
 
     output_path = Path("data/output.jsonl")
 
-    assert output_path.exists()
-    assert output_path.stat().st_size > 0
+    assert output_path.exists(), (
+        "Expected output file not found after benchmark run.\n"
+        f"expected_path={output_path.resolve()}"
+    )
+    assert output_path.stat().st_size > 0, (
+        "Expected output file to be non-empty.\n"
+        f"actual_size={output_path.stat().st_size}"
+    )
