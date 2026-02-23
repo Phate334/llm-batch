@@ -2,9 +2,8 @@ services:
   batch:
     image: ghcr.io/phate334/llm-batch:v0.2.0
     volumes:
-      - cache:/nonroot/.cache
+      - cache:/root/.cache
       - ./data:/app/data
-    user: "${UID:-0}:${GID:-0}"
     environment:
       - OPENAI_LOGGER_DATA_DIR=/app/data
       - HTTP_PROXY=http://localhost:8080

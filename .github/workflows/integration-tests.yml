@@ -11,6 +11,8 @@ jobs:
     env:
       RUN_INTEGRATION: "1"
       COMPOSE_PROJECT_NAME: llm-batch-ci
+      UID: "999"
+      GID: "999"
 
     steps:
       - name: Checkout code
@@ -42,12 +44,6 @@ jobs:
           fi
           printf 'HF_TOKEN=%s\n' "$HF_TOKEN" > .env
 
-      - name: Export runner UID/GID for compose
-        run: |
-          echo "UID=$(id -u)" >> "$GITHUB_ENV"
-          echo "GID=$(id -g)" >> "$GITHUB_ENV"
-          echo "Using UID=$(id -u) GID=$(id -g) for compose services"
-
       - name: Start compose services
         run: docker compose -f compose.yaml up -d llm batch
 
@@ -67,6 +63,10 @@ jobs:
 
       - name: Run integration tests
         run: RUN_INTEGRATION=1 uv run pytest -o addopts='' tests/integration -m integration -vv -rA
+
+      - name: Show batch container user and home
+        if: always()
+        run: docker compose -f compose.yaml run --rm -T batch sh -lc 'id; echo "HOME=${HOME:-<unset>}"; printf "XDG_CACHE_HOME=%s\n" "${XDG_CACHE_HOME:-<unset>}"'
 
       - name: Diagnose data permissions on failure
         if: failure()
