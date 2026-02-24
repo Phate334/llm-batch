@@ -34,8 +34,8 @@ jobs:
 
       - name: Detect runner UID and GID for compose
         run: |
-          echo "UID=$(id -u)" >> "$GITHUB_ENV"
-          echo "GID=$(id -g)" >> "$GITHUB_ENV"
+          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
           echo "Runner UID:GID = $(id -u):$(id -g)"
 
       - name: Prepare .env for compose
@@ -52,7 +52,6 @@ jobs:
         run: |
           mkdir -p data/requests
           rm -f data/input.jsonl data/output.jsonl
-          chmod -R 0777 data
           ls -ldn data data/requests
 
       - name: Start compose services
@@ -84,7 +83,7 @@ jobs:
         run: |
           echo "Runner identity:"
           id
-          echo "Compose UID/GID env: UID=${UID:-<unset>} GID=${GID:-<unset>}"
+          echo "Compose UID/GID env: HOST_UID=${HOST_UID:-<unset>} HOST_GID=${HOST_GID:-<unset>}"
           echo "data directory ownership and permissions:"
           ls -ldn data || true
           ls -lna data || true
