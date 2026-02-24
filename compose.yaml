@@ -8,6 +8,7 @@ services:
     environment:
       - OPENAI_LOGGER_DATA_DIR=/app/data
       - HTTP_PROXY=http://localhost:8080
+      - HOME=/tmp
     env_file:
       - .env
 
