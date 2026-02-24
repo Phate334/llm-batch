@@ -44,6 +44,13 @@ jobs:
           fi
           printf 'HF_TOKEN=%s\n' "$HF_TOKEN" > .env
 
+      - name: Prepare writable data directory
+        run: |
+          mkdir -p data
+          rm -f data/input.jsonl data/output.jsonl
+          chmod 0777 data
+          ls -ldn data
+
       - name: Start compose services
         run: docker compose -f compose.yaml up -d llm batch
 
