@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
 
+# docker might not be installed locally (e.g. when using podman with an alias).
+# subprocess calls don't respect shell aliases, so we dynamically choose the
+# executable based on what's available in PATH.  This mirrors the Github
+# Actions environment where `docker` is guaranteed and keeps tests portable.
+_COMPOSE_CLI = shutil.which("docker") or shutil.which("podman") or "docker"
+
 DOCKER_COMPOSE_EXEC_PREFIX = [
-    "docker",
+    _COMPOSE_CLI,
     "compose",
     "-f",
     "compose.yaml",
