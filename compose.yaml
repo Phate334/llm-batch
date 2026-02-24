@@ -1,6 +1,6 @@
 services:
   batch:
-    image: ghcr.io/phate334/llm-batch:v0.2.1
+    image: ghcr.io/phate334/llm-batch:v0.2.1-rc
     user: "${UID:-999}:${GID:-999}"
     volumes:
       - cache:/root/.cache
