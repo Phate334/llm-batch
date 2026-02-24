@@ -1,5 +1,6 @@
 """Integration validation for x-batch-id header routing output."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -13,23 +14,42 @@ from .helpers import (
 )
 
 
+def _write_sharegpt_dataset(dataset_path: Path) -> None:
+    """Create a minimal ShareGPT-style dataset with two conversations."""
+
+    dataset_path.parent.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {
+            "id": "sharegpt-integration-1",
+            "conversations": [
+                {"from": "human", "value": "Give me a short greeting."},
+                {"from": "assistant", "value": "Hello!"},
+            ],
+        },
+        {
+            "id": "sharegpt-integration-2",
+            "conversations": [
+                {"from": "human", "value": "Name two animals."},
+                {"from": "assistant", "value": "Cat and dog."},
+            ],
+        },
+    ]
+    dataset_path.write_text(json.dumps(rows), encoding="utf-8")
+
+
 @pytest.mark.integration  # type: ignore[misc]
 def test_x_batch_id_header_routes_output_to_request_subdirectory() -> None:
     """Run benchmark with x-batch-id header and validate routed output path."""
 
-    host_dataset_path = Path("data") / "ShareGPT_V3_unfiltered_cleaned_split.json"
-    if not host_dataset_path.exists():
-        pytest.skip(
-            "ShareGPT dataset file is not available. "
-            "Expected at data/ShareGPT_V3_unfiltered_cleaned_split.json."
-        )
+    dataset_path = Path("data") / "ShareGPT_V3_unfiltered_cleaned_split.json"
+    _write_sharegpt_dataset(dataset_path)
 
     command = build_bench_command(
         "--skip-chat-template",
         "--dataset-name",
         "sharegpt",
         "--dataset-path",
-        "/app/data/ShareGPT_V3_unfiltered_cleaned_split.json",
+        f"/app/data/{dataset_path.name}",
         "--header",
         "x-batch-id=sharegpt",
     )
