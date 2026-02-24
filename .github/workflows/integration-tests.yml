@@ -11,8 +11,6 @@ jobs:
     env:
       RUN_INTEGRATION: "1"
       COMPOSE_PROJECT_NAME: llm-batch-ci
-      UID: "999"
-      GID: "999"
 
     steps:
       - name: Checkout code
@@ -34,6 +32,12 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
+      - name: Detect runner UID and GID for compose
+        run: |
+          echo "UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "GID=$(id -g)" >> "$GITHUB_ENV"
+          echo "Runner UID:GID = $(id -u):$(id -g)"
+
       - name: Prepare .env for compose
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -46,10 +50,10 @@ jobs:
 
       - name: Prepare writable data directory
         run: |
-          mkdir -p data
+          mkdir -p data/requests
           rm -f data/input.jsonl data/output.jsonl
-          chmod 0777 data
-          ls -ldn data
+          chmod -R 0777 data
+          ls -ldn data data/requests
 
       - name: Start compose services
         run: docker compose -f compose.yaml up -d llm batch
@@ -80,10 +84,13 @@ jobs:
         run: |
           echo "Runner identity:"
           id
+          echo "Compose UID/GID env: UID=${UID:-<unset>} GID=${GID:-<unset>}"
           echo "data directory ownership and permissions:"
           ls -ldn data || true
           ls -lna data || true
-          stat -c '%A %a %u:%g %n' data data/output.jsonl 2>/dev/null || true
+          ls -ldn data/requests data/requests/sharegpt 2>/dev/null || true
+          ls -lna data/requests data/requests/sharegpt 2>/dev/null || true
+          stat -c '%A %a %u:%g %n' data data/requests data/requests/sharegpt data/output.jsonl data/requests/sharegpt/output.jsonl 2>/dev/null || true
 
       - name: Stop compose services
         if: always()

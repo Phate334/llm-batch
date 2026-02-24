@@ -39,13 +39,19 @@ def clean_data_directory() -> Generator[None]:
 def _handle_remove_readonly(
     func: Callable[..., Any], path: str, exc: BaseException
 ) -> object:
-    """Error handler for shutil.rmtree when files are read-only."""
-    if stat.S_ISREG(os.stat(path).st_mode):
-        os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
-        func(path)
-        return None
-    else:
+    """Error handler for shutil.rmtree when paths are not writable."""
+    if not isinstance(exc, PermissionError):
         raise exc
+
+    target = Path(path)
+    for candidate in (target, target.parent):
+        if not candidate.exists():
+            continue
+        candidate_mode = candidate.stat().st_mode
+        os.chmod(candidate, candidate_mode | stat.S_IWUSR | stat.S_IXUSR)
+
+    func(path)
+    return None
 
 
 def _clear_data_dir(data_dir: Path) -> None:
