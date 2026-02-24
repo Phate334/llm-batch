@@ -2,8 +2,10 @@
 
 import os
 import shutil
-from collections.abc import Generator
+import stat
+from collections.abc import Callable, Generator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -34,10 +36,22 @@ def clean_data_directory() -> Generator[None]:
     _clear_data_dir(data_dir)
 
 
+def _handle_remove_readonly(
+    func: Callable[..., Any], path: str, exc: BaseException
+) -> object:
+    """Error handler for shutil.rmtree when files are read-only."""
+    if stat.S_ISREG(os.stat(path).st_mode):
+        os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+        func(path)
+        return None
+    else:
+        raise exc
+
+
 def _clear_data_dir(data_dir: Path) -> None:
     data_dir.mkdir(parents=True, exist_ok=True)
     for child in data_dir.iterdir():
         if child.is_dir():
-            shutil.rmtree(child)
+            shutil.rmtree(child, onexc=_handle_remove_readonly)
         else:
             child.unlink(missing_ok=True)
