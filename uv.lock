@@ -868,7 +868,7 @@ wheels = [
 
 [[package]]
 name = "llm-batch"
-version = "0.2.2rc0"
+version = "0.2.2"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
