@@ -28,10 +28,20 @@ COPY --from=builder /app /app
 
 # Setup a non-root user
 RUN groupadd --system --gid 999 nonroot \
- && useradd --system --gid 999 --uid 999 --create-home nonroot
+    && useradd --system --gid 999 --uid 999 --create-home nonroot \
+    && mkdir -p \
+    /home/nonroot/.cache \
+    /home/nonroot/.cache/huggingface/hub \
+    /home/nonroot/.cache/huggingface/transformers \
+    /home/nonroot/.mitmproxy \
+    && chmod -R 0777 /home/nonroot/.cache /home/nonroot/.mitmproxy
 
 # Place executables in the environment at the front of the path
 ENV PATH="/app/.venv/bin:$PATH"
+ENV XDG_CACHE_HOME="/home/nonroot/.cache"
+ENV HF_HOME="/home/nonroot/.cache/huggingface"
+ENV HF_HUB_CACHE="/home/nonroot/.cache/huggingface/hub"
+ENV TRANSFORMERS_CACHE="/home/nonroot/.cache/huggingface/transformers"
 
 # Use `/app` as the working directory
 WORKDIR /app
@@ -39,4 +49,4 @@ WORKDIR /app
 # Use the non-root user to run our application
 USER nonroot
 
-CMD ["mitmdump", "-s", "./src/openai_logger.py"]
+CMD ["mitmdump", "--set", "confdir=/home/nonroot/.mitmproxy", "-s", "./src/openai_logger.py"]
