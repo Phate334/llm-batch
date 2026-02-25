@@ -1,11 +1,12 @@
 services:
   batch:
-    image: ghcr.io/phate334/llm-batch:v0.2.0
+    image: ghcr.io/phate334/llm-batch:v0.2.2
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
     volumes:
-      - cache:/root/.cache
+      - batch_cache:/home/nonroot/.cache
       - ./data:/app/data
     environment:
-      - OPENAI_LOGGER_DATA_DIR=/app/data
+      - DATA_DIR=/app/data
       - HTTP_PROXY=http://localhost:8080
     env_file:
       - .env
@@ -15,11 +16,12 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - cache:/root/.cache
+      - llm_cache:/root/.cache
     environment:
       - LLAMA_ARG_HF_REPO=lmstudio-community/gemma-3-1B-it-qat-GGUF
       - LLAMA_ARG_N_PARALLEL=2
       - LLAMA_ARG_CTX_SIZE=4096
 
 volumes:
-  cache:
+  batch_cache:
+  llm_cache:
