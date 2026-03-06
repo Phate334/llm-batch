@@ -10,6 +10,7 @@ import pytest
 from src.log_storage import StoragePaths, StorageRouter
 from src.openai_logger import (
     REQUEST_METADATA_KEY,
+    REQUEST_ID_METADATA_KEY,
     STORAGE_METADATA_KEY,
     EndpointRegistry,
     EndpointSpec,
@@ -169,3 +170,33 @@ def test_request_records_payload_and_metadata(
     assert flow.metadata[REQUEST_METADATA_KEY] == {"key": "value", "flag": True}
     assert flow.metadata[STORAGE_METADATA_KEY] == storage_paths
     assert router.called_with is flow
+
+
+def test_request_records_request_id_header(
+    make_flow, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    flow = make_flow(
+        request_body='{"key": "value"}',
+        request_headers={"X-Request-ID": "req-123"},
+    )
+    calls: list[tuple[Path, object]] = []
+    storage_paths = StoragePaths(
+        input_path=tmp_path / "input.jsonl",
+        output_path=tmp_path / "output.jsonl",
+    )
+
+    monkeypatch.setattr(
+        "src.openai_logger.append_jsonl",
+        lambda path, payload: calls.append((path, payload)),
+    )
+
+    logger = OpenAILogger(
+        endpoint_registry=build_registry(),
+        storage_router=DummyStorageRouter(storage_paths),
+    )
+    logger.request(flow)
+
+    expected_payload = {"key": "value", "request_id": "req-123"}
+    assert calls == [(storage_paths.input_path, expected_payload)]
+    assert flow.metadata[REQUEST_METADATA_KEY] == expected_payload
+    assert flow.metadata[REQUEST_ID_METADATA_KEY] == "req-123"

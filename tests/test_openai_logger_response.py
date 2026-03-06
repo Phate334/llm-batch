@@ -8,7 +8,12 @@ from typing import Any
 import pytest
 
 from src.log_storage import StoragePaths
-from src.openai_logger import REQUEST_METADATA_KEY, STORAGE_METADATA_KEY, OpenAILogger
+from src.openai_logger import (
+    REQUEST_ID_METADATA_KEY,
+    REQUEST_METADATA_KEY,
+    STORAGE_METADATA_KEY,
+    OpenAILogger,
+)
 
 
 def test_response_skips_without_request_metadata(
@@ -115,6 +120,34 @@ def test_response_writes_json_payload(
     assert calls == [(paths.output_path, {"status": "ok"})]
 
 
+def test_response_includes_request_id_in_json_payload(
+    make_flow, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    flow = make_flow(
+        response_body='{"status": "ok"}',
+        response_headers={"content-type": "application/json"},
+        request_headers={"x-request-id": "req-123"},
+    )
+    flow.metadata[REQUEST_METADATA_KEY] = {"request_id": "req-123"}
+    flow.metadata[REQUEST_ID_METADATA_KEY] = "req-123"
+    paths = StoragePaths(
+        input_path=tmp_path / "input.jsonl",
+        output_path=tmp_path / "output.jsonl",
+    )
+    flow.metadata[STORAGE_METADATA_KEY] = paths
+    calls: list[tuple[Path, Any]] = []
+
+    monkeypatch.setattr(
+        "src.openai_logger.append_jsonl",
+        lambda path, payload: calls.append((path, payload)),
+    )
+
+    logger = OpenAILogger()
+    logger.response(flow)
+
+    assert calls == [(paths.output_path, {"status": "ok", "request_id": "req-123"})]
+
+
 def test_response_writes_sse_aggregate(
     make_flow, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -147,6 +180,44 @@ def test_response_writes_sse_aggregate(
     assert len(calls) == 1
     assert calls[0][0] == paths.output_path
     assert calls[0][1]["choices"][0]["message"]["content"] == "Hi"
+
+
+def test_response_includes_request_id_in_sse_payload(
+    make_flow, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    body = "\n".join(
+        [
+            'data: {"id": "chatcmpl_1", "created": 1, "model": "gpt", "choices": [{"index": 0, "delta": {"content": "Hi"}}]}',
+            "data: [DONE]",
+        ]
+    )
+    flow = make_flow(
+        response_body=body,
+        response_headers={"content-type": "text/event-stream; charset=utf-8"},
+        request_headers={"x-request-id": "req-789"},
+    )
+    flow.metadata[REQUEST_METADATA_KEY] = {"request_id": "req-789"}
+    flow.metadata[REQUEST_ID_METADATA_KEY] = "req-789"
+    paths = StoragePaths(
+        input_path=tmp_path / "input.jsonl",
+        output_path=tmp_path / "output.jsonl",
+    )
+    flow.metadata[STORAGE_METADATA_KEY] = paths
+    calls: list[tuple[Path, Any]] = []
+
+    monkeypatch.setattr(
+        "src.openai_logger.append_jsonl",
+        lambda path, payload: calls.append((path, payload)),
+    )
+
+    logger = OpenAILogger()
+    logger.response(flow)
+
+    assert len(calls) == 1
+    assert calls[0][0] == paths.output_path
+    payload = calls[0][1]
+    assert payload["request_id"] == "req-789"
+    assert payload["choices"][0]["message"]["content"] == "Hi"
 
 
 def test_response_skips_empty_sse(
