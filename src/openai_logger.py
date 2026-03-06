@@ -12,6 +12,7 @@ from src.log_storage import StoragePaths, StorageRouter, append_jsonl
 
 REQUEST_METADATA_KEY = "openai_request_payload"
 STORAGE_METADATA_KEY = "openai_storage_paths"
+REQUEST_ID_METADATA_KEY = "openai_request_id"
 
 
 @dataclass(frozen=True)
@@ -232,6 +233,8 @@ class OpenAILogger:
         if not self._endpoint_registry.supports(flow.request.path):
             return
 
+        request_id = flow.request.headers.get("x-request-id")
+
         body_text = flow.request.get_text(strict=False)
         if not body_text:
             return
@@ -244,8 +247,13 @@ class OpenAILogger:
         if payload is None:
             return
 
+        if request_id:
+            payload = {**payload, "request_id": request_id}
+
         storage_paths = self._storage_router.resolve(flow)
         flow.metadata[REQUEST_METADATA_KEY] = payload
+        if request_id:
+            flow.metadata[REQUEST_ID_METADATA_KEY] = request_id
         flow.metadata[STORAGE_METADATA_KEY] = storage_paths
         append_jsonl(storage_paths.input_path, payload)
 
@@ -259,6 +267,15 @@ class OpenAILogger:
         if not isinstance(storage_paths, StoragePaths):
             return
 
+        request_metadata = flow.metadata.get(REQUEST_METADATA_KEY)
+        request_id = None
+        if isinstance(request_metadata, dict):
+            request_id = request_metadata.get("request_id")
+        if not request_id:
+            request_id = flow.metadata.get(REQUEST_ID_METADATA_KEY)
+        if not request_id:
+            request_id = flow.request.headers.get("x-request-id")
+
         body_text = flow.response.get_text(strict=False)
         if not body_text:
             return
@@ -269,12 +286,17 @@ class OpenAILogger:
             payload = aggregate_streamed_response(events)
             if payload is None:
                 return
+            if request_id:
+                payload["request_id"] = request_id
             append_jsonl(storage_paths.output_path, payload)
             return
 
         payload = read_json(body_text)
         if payload is None:
             return
+
+        if request_id and isinstance(payload, dict):
+            payload = {**payload, "request_id": request_id}
 
         append_jsonl(storage_paths.output_path, payload)
 
