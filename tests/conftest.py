@@ -37,6 +37,7 @@ class DummyRequest:
 class DummyResponse:
     body_text: str = ""
     headers: DummyHeaders = field(default_factory=DummyHeaders)
+    status_code: int = 200
 
     def get_text(self, strict: bool = False) -> str:
         return self.body_text
@@ -59,7 +60,7 @@ def make_flow() -> Callable[..., DummyFlow]:
     def _make_flow(
         *,
         method: str = "POST",
-        path: str = "/chat/completions",
+        path: str = "/v1/chat/completions",
         request_body: str = "",
         request_headers: dict[str, str] | None = None,
         response_body: str = "",

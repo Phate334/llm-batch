@@ -107,7 +107,8 @@ def test_tool_calls_are_logged_with_arguments() -> None:
     matched_cities: set[str] = set()
 
     for record in records:
-        choices = record.get("choices")
+        response_body = record["response"]["body"]
+        choices = response_body.get("choices")
         assert isinstance(choices, list) and choices, "Response choices missing."
         first_choice = choices[0]
         message = first_choice.get("message", {})
