@@ -1,22 +1,51 @@
 import argparse
+import importlib.metadata
 
-from vllm.benchmarks import serve as bench_serve
+from vllm.logger import init_logger
+
+logger = init_logger(__name__)
+
+
+def _get_version() -> str:
+    for dist_name in ("vllm", "llm-batch"):
+        try:
+            return importlib.metadata.version(dist_name)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+    return "unknown"
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Minimal vLLM CLI")
-    subparsers = parser.add_subparsers(dest="subcmd")
+    # Lazy-load command modules to avoid eager imports in CLI startup.
+    import vllm.entrypoints.cli.benchmark.main
+    from vllm.entrypoints.utils import VLLM_SUBCMD_PARSER_EPILOG, cli_env_setup
 
-    bench_parser = subparsers.add_parser("bench", help="Benchmark commands")
-    bench_subparsers = bench_parser.add_subparsers(dest="bench_subcmd")
+    cmd_modules = [vllm.entrypoints.cli.benchmark.main]
 
-    serve_parser = bench_subparsers.add_parser(
-        "serve", help="Benchmark the online serving throughput"
+    cli_env_setup()
+
+    parser = argparse.ArgumentParser(
+        description="vLLM CLI",
+        epilog=VLLM_SUBCMD_PARSER_EPILOG.format(subcmd="[subcommand]"),
     )
-    bench_serve.add_cli_args(serve_parser)
-    serve_parser.set_defaults(dispatch_function=bench_serve.main)
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=_get_version(),
+    )
+    subparsers = parser.add_subparsers(required=False, dest="subparser")
+    cmds = {}
+    for cmd_module in cmd_modules:
+        new_cmds = cmd_module.cmd_init()
+        for cmd in new_cmds:
+            cmd.subparser_init(subparsers).set_defaults(dispatch_function=cmd.cmd)
+            cmds[cmd.name] = cmd
 
     args = parser.parse_args()
+    if args.subparser in cmds:
+        cmds[args.subparser].validate(args)
+
     if hasattr(args, "dispatch_function"):
         args.dispatch_function(args)
     else:

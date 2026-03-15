@@ -26,6 +26,7 @@ import json
 import os
 import random
 import shutil
+import ssl
 import time
 import uuid
 import warnings
@@ -33,6 +34,7 @@ from collections.abc import AsyncGenerator, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any, Literal
 
 import aiohttp
@@ -49,7 +51,7 @@ from vllm.benchmarks.lib.endpoint_request_func import (
 from vllm.benchmarks.lib.ready_checker import wait_for_endpoint
 from vllm.benchmarks.lib.utils import convert_to_pytorch_benchmark_format, write_to_json
 from transformers import AutoTokenizer
-from typing import Any
+
 TokenizerLike = Any
 from vllm.utils.gc_utils import freeze_gc_heap
 from vllm.utils.network_utils import join_host_port
@@ -62,11 +64,14 @@ TERM_PLOTLIB_AVAILABLE = (importlib.util.find_spec("termplotlib") is not None) a
 
 
 async def get_first_model_from_server(
-    base_url: str, headers: dict | None = None
+    base_url: str,
+    headers: dict | None = None,
+    ssl_context: ssl.SSLContext | bool | None = None,
 ) -> tuple[str, str]:
     """Fetch the first model from the server's /v1/models endpoint."""
     models_url = f"{base_url}/v1/models"
-    async with aiohttp.ClientSession() as session:
+    connector = aiohttp.TCPConnector(ssl=ssl_context)
+    async with aiohttp.ClientSession(connector=connector) as session:
         try:
             async with session.get(models_url, headers=headers) as response:
                 response.raise_for_status()
@@ -617,6 +622,7 @@ async def benchmark(
     ramp_up_start_rps: int | None = None,
     ramp_up_end_rps: int | None = None,
     ready_check_timeout_sec: int = 600,
+    ssl_context: ssl.SSLContext | bool | None = None,
 ):
     try:
         request_func = ASYNC_REQUEST_FUNCS[endpoint_type]
@@ -624,6 +630,7 @@ async def benchmark(
         raise ValueError(f"Unknown backend: {endpoint_type}") from None
 
     # Reuses connections across requests to reduce TLS handshake overhead.
+    ssl_setting = ssl_context if ssl_context is not None else ("https://" in api_url)
     connector = aiohttp.TCPConnector(
         limit=max_concurrency or 0,
         limit_per_host=max_concurrency or 0,
@@ -632,7 +639,7 @@ async def benchmark(
         keepalive_timeout=60,
         enable_cleanup_closed=True,
         force_close=False,
-        ssl=("https://" in api_url),
+        ssl=ssl_setting,
     )
 
     session = aiohttp.ClientSession(
@@ -1161,6 +1168,44 @@ def save_to_pytorch_benchmark_format(
         write_to_json(pt_file, pt_records)
 
 
+def compute_result_filename(
+    args: argparse.Namespace,
+    model_id: str,
+    label: str,
+    current_dt: str,
+) -> str | None:
+    """Compute result filename from benchmark configuration."""
+    if not (
+        args.plot_timeline
+        or args.plot_dataset_stats
+        or args.save_result
+        or args.append_result
+    ):
+        return None
+
+    base_model_id = model_id.split("/")[-1]
+    max_concurrency_str = (
+        f"-concurrency{args.max_concurrency}"
+        if args.max_concurrency is not None
+        else ""
+    )
+    label = label or args.backend
+
+    if args.ramp_up_strategy is not None:
+        file_name = f"{label}-ramp-up-{args.ramp_up_strategy}-{args.ramp_up_start_rps}qps-{args.ramp_up_end_rps}qps{max_concurrency_str}-{base_model_id}-{current_dt}.json"  # noqa
+    else:
+        file_name = f"{label}-{args.request_rate}qps{max_concurrency_str}-{base_model_id}-{current_dt}.json"  # noqa
+
+    if args.result_filename:
+        file_name = args.result_filename
+
+    if args.result_dir:
+        os.makedirs(args.result_dir, exist_ok=True)
+        file_name = os.path.join(args.result_dir, file_name)
+
+    return file_name
+
+
 def add_cli_args(parser: argparse.ArgumentParser):
     add_dataset_parser(parser)
     parser.add_argument(
@@ -1503,6 +1548,44 @@ def add_cli_args(parser: argparse.ArgumentParser):
         type=json.loads,
         default=None,
     )
+    parser.add_argument(
+        "--skip-tokenizer-init",
+        action="store_true",
+        default=False,
+        help="Skip initialization of tokenizer and detokenizer",
+    )
+
+    parser.add_argument(
+        "--insecure",
+        action="store_true",
+        default=False,
+        help="Disable SSL certificate verification. Use this option when "
+        "connecting to servers with self-signed certificates.",
+    )
+
+    parser.add_argument(
+        "--plot-timeline",
+        action="store_true",
+        help="Generate an HTML timeline plot showing request execution. "
+        "The plot will be saved alongside the results JSON file.",
+    )
+    parser.add_argument(
+        "--timeline-itl-thresholds",
+        type=float,
+        nargs=2,
+        default=[25.0, 50.0],
+        metavar=("THRESHOLD1", "THRESHOLD2"),
+        help="ITL thresholds in milliseconds for timeline plot coloring. "
+        "Specify two values to categorize inter-token latencies into three groups: "
+        "below first threshold (green), between thresholds (orange), "
+        "and above second threshold (red). Default: 25 50 (milliseconds).",
+    )
+    parser.add_argument(
+        "--plot-dataset-stats",
+        action="store_true",
+        help="Generate a matplotlib figure with dataset statistics showing "
+        "prompt tokens, output tokens, and combined token distributions.",
+    )
 
 
 def main(args: argparse.Namespace) -> dict[str, Any]:
@@ -1555,22 +1638,35 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
             else:
                 raise ValueError("Invalid header format. Please use KEY=VALUE format.")
 
+    # SSL context configuration
+    ssl_context: ssl.SSLContext | bool | None = None
+    if args.insecure:
+        ssl_context = False
+    elif "https://" in base_url:
+        ssl_context = True
+
     # Fetch model from server if not specified
     if args.model is None:
         print("Model not specified, fetching first model from server...")
-        model_name, model_id = await get_first_model_from_server(base_url, headers)
+        model_name, model_id = await get_first_model_from_server(
+            base_url, headers, ssl_context
+        )
         print(f"First model name: {model_name}, first model id: {model_id}")
     else:
         model_name = args.served_model_name
         model_id = args.model
 
-    tokenizer_id = args.tokenizer if args.tokenizer is not None else model_id
-    tokenizer_mode = args.tokenizer_mode
-
-    tokenizer = AutoTokenizer.from_pretrained(
-        tokenizer_id,
-        trust_remote_code=args.trust_remote_code,
-    )
+    if args.skip_tokenizer_init:
+        tokenizer_id = None
+        tokenizer_mode = None
+        tokenizer = None
+    else:
+        tokenizer_id = args.tokenizer if args.tokenizer is not None else model_id
+        tokenizer_mode = args.tokenizer_mode
+        tokenizer = AutoTokenizer.from_pretrained(
+            tokenizer_id,
+            trust_remote_code=args.trust_remote_code,
+        )
 
     if args.dataset_name is None:
         raise ValueError(
@@ -1681,6 +1777,7 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
         ramp_up_start_rps=args.ramp_up_start_rps,
         ramp_up_end_rps=args.ramp_up_end_rps,
         ready_check_timeout_sec=args.ready_check_timeout_sec,
+        ssl_context=ssl_context,
     )
 
     # Save config and results to json
@@ -1722,6 +1819,88 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
     # Merge with benchmark result
     result_json = {**result_json, **benchmark_result}
 
+    file_name = compute_result_filename(args, model_id, label, current_dt)
+
+    if args.plot_timeline:
+        try:
+            from vllm.benchmarks.plot import generate_timeline_plot
+
+            per_request_data = []
+            start_times = benchmark_result.get("start_times", [])
+            ttfts = benchmark_result.get("ttfts", [])
+            itls = benchmark_result.get("itls", [])
+            input_lens = benchmark_result.get("input_lens", [])
+            output_lens = benchmark_result.get("output_lens", [])
+
+            if start_times and ttfts and itls:
+                for i in range(len(start_times)):
+                    latency = ttfts[i] + sum(itls[i]) if itls[i] else ttfts[i]
+                    per_request_data.append(
+                        {
+                            "start_time": start_times[i],
+                            "ttft": ttfts[i],
+                            "itl": itls[i],
+                            "latency": latency,
+                            "prompt_len": input_lens[i],
+                            "output_tokens": output_lens[i],
+                        }
+                    )
+
+                if file_name is None:
+                    raise ValueError(
+                        "No result filename available for timeline plot output."
+                    )
+                timeline_path = Path(file_name).with_suffix(".timeline.html")
+                itl_thresholds_sec = [t / 1000.0 for t in args.timeline_itl_thresholds]
+                generate_timeline_plot(
+                    per_request_data,
+                    timeline_path,
+                    itl_thresholds=itl_thresholds_sec,
+                )
+            else:
+                warnings.warn(
+                    "Timeline plot requires detailed metrics. "
+                    "Ensure the benchmark completed successfully.",
+                    stacklevel=2,
+                )
+        except Exception as e:
+            warnings.warn(f"Failed to generate timeline plot: {e}", stacklevel=2)
+
+    if args.plot_dataset_stats:
+        try:
+            from vllm.benchmarks.plot import generate_dataset_stats_plot
+
+            per_request_data = []
+            input_lens = benchmark_result.get("input_lens", [])
+            output_lens = benchmark_result.get("output_lens", [])
+
+            if input_lens and output_lens:
+                for req_input_len, req_output_len in zip(input_lens, output_lens):
+                    per_request_data.append(
+                        {
+                            "prompt_len": req_input_len,
+                            "output_tokens": req_output_len,
+                        }
+                    )
+
+                if file_name is None:
+                    raise ValueError(
+                        "No result filename available for dataset plot output."
+                    )
+                stats_path = Path(file_name).with_suffix(".dataset_stats.png")
+                generate_dataset_stats_plot(per_request_data, stats_path)
+            else:
+                warnings.warn(
+                    "Dataset statistics plot requires input and output length data. "
+                    "Ensure the benchmark completed successfully.",
+                    stacklevel=2,
+                )
+        except Exception as e:
+            warnings.warn(
+                f"Failed to generate dataset statistics plot: {e}",
+                stacklevel=2,
+            )
+
     if not args.save_detailed:
         # Remove fields with too many data points
         for field in [
@@ -1738,24 +1917,10 @@ async def main_async(args: argparse.Namespace) -> dict[str, Any]:
             if field in benchmark_result:
                 del benchmark_result[field]
 
-        # Save to file
+    # Save to file
     if args.save_result or args.append_result:
-        base_model_id = model_id.split("/")[-1]
-        max_concurrency_str = (
-            f"-concurrency{args.max_concurrency}"
-            if args.max_concurrency is not None
-            else ""
-        )
-        label = label or args.backend
-        if args.ramp_up_strategy is not None:
-            file_name = f"{label}-ramp-up-{args.ramp_up_strategy}-{args.ramp_up_start_rps}qps-{args.ramp_up_end_rps}qps{max_concurrency_str}-{base_model_id}-{current_dt}.json"  # noqa
-        else:
-            file_name = f"{label}-{args.request_rate}qps{max_concurrency_str}-{base_model_id}-{current_dt}.json"  # noqa
-        if args.result_filename:
-            file_name = args.result_filename
-        if args.result_dir:
-            os.makedirs(args.result_dir, exist_ok=True)
-            file_name = os.path.join(args.result_dir, file_name)
+        if file_name is None:
+            raise ValueError("Result filename should not be None when saving results")
         with open(
             file_name, mode="a+" if args.append_result else "w", encoding="utf-8"
         ) as outfile:
