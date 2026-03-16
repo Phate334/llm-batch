@@ -12,7 +12,7 @@ services:
       - .env
 
   llm:
-    image: ghcr.io/ggml-org/llama.cpp:server-cuda-b8352
+    image: ghcr.io/ggml-org/llama.cpp:server-b7897
     ports:
       - "8080:8080"
     volumes:
@@ -21,8 +21,6 @@ services:
       - LLAMA_ARG_HF_REPO=lmstudio-community/gemma-3-1B-it-qat-GGUF
       - LLAMA_ARG_N_PARALLEL=2
       - LLAMA_ARG_CTX_SIZE=4096
-    devices:
-      - nvidia.com/gpu=all
 
 volumes:
   batch_cache:
