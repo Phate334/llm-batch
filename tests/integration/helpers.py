@@ -98,10 +98,21 @@ def assert_and_load_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def assert_chat_completion_payloads(records: list[dict[str, Any]]) -> None:
-    """Validate the basic schema of chat completion payloads."""
+    """Validate the basic schema of Batch API chat completion output records."""
 
     for record in records:
-        choices = record.get("choices")
+        assert "custom_id" in record, "Missing 'custom_id' in batch output record."
+        assert record.get("error") is None, (
+            f"Unexpected error in batch record: {record.get('error')}"
+        )
+        response = record.get("response")
+        assert isinstance(response, dict), "Expected 'response' to be an object."
+        assert response.get("status_code") == 200, (
+            f"Expected status_code 200, got {response.get('status_code')}."
+        )
+        body = response.get("body")
+        assert isinstance(body, dict), "Expected 'response.body' to be an object."
+        choices = body.get("choices")
         assert isinstance(choices, list) and choices, (
             "Expected non-empty 'choices' in chat completion payload."
         )
