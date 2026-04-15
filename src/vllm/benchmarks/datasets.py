@@ -183,6 +183,46 @@ class BenchmarkDataset(ABC):
         )
         return lora_request
 
+    def get_round_robin_lora_request(
+        self,
+        index: int,
+        max_loras: int | None = None,
+        lora_path: str | None = None,
+    ) -> LoRARequest | None:
+        """
+        Optionally select a LoRA request using deterministic round-robin.
+
+        This method cycles through LoRA IDs in order based on the request
+        index, providing reproducible LoRA assignment.
+        """
+        if max_loras is None or lora_path is None:
+            return None
+
+        # Deterministic round-robin: cycle through [1, max_loras]
+        lora_id = index % max_loras + 1
+        lora_request = LoRARequest(
+            lora_name=str(lora_id),
+            lora_int_id=lora_id,
+            lora_path=lora_path_on_disk(lora_path),
+        )
+        return lora_request
+
+    def get_lora_request(
+        self,
+        index: int,
+        max_loras: int | None = None,
+        lora_path: str | None = None,
+        lora_assignment: str = "random",
+    ) -> LoRARequest | None:
+        """
+        Select a LoRA request using the specified assignment strategy.
+        """
+        if lora_assignment == "round-robin":
+            return self.get_round_robin_lora_request(
+                index=index, max_loras=max_loras, lora_path=lora_path
+            )
+        return self.get_random_lora_request(max_loras=max_loras, lora_path=lora_path)
+
     @abstractmethod
     def sample(
         self,
@@ -474,6 +514,9 @@ class RandomDataset(BenchmarkDataset):
         input_len: int = DEFAULT_INPUT_LEN,
         output_len: int = DEFAULT_OUTPUT_LEN,
         batchsize: int = 1,
+        max_loras: int | None = None,
+        lora_path: str | None = None,
+        lora_assignment: str = "random",
         **kwargs,
     ) -> list[SampleRequest]:
         # validate total input tokens (prefix + sampled) is at least 1.
@@ -518,11 +561,18 @@ class RandomDataset(BenchmarkDataset):
                 allowed_tokens=allowed_tokens,
             )
             token_mismatch_total += token_mismatch
+            lora_req = self.get_lora_request(
+                index=i,
+                max_loras=max_loras,
+                lora_path=lora_path,
+                lora_assignment=lora_assignment,
+            )
             requests.append(
                 SampleRequest(
                     prompt=prompt,
                     prompt_len=total_input_len,
                     expected_output_len=int(output_lens[i]),
+                    lora_request=lora_req,
                     request_id=request_id_prefix + str(i),
                 )
             )
@@ -1242,6 +1292,7 @@ class ShareGPTDataset(BenchmarkDataset):
         enable_multimodal_chat: bool = False,
         request_id_prefix: str = "",
         no_oversample: bool = False,
+        lora_assignment: str = "random",
         **kwargs,
     ) -> list:
         samples: list = []
@@ -1254,8 +1305,11 @@ class ShareGPTDataset(BenchmarkDataset):
                 entry["conversations"][1]["value"],
             )
 
-            lora_request = self.get_random_lora_request(
-                max_loras=max_loras, lora_path=lora_path
+            lora_request = self.get_lora_request(
+                index=ind,
+                max_loras=max_loras,
+                lora_path=lora_path,
+                lora_assignment=lora_assignment,
             )
             prompt_ids = tokenizer(prompt).input_ids
             completion_ids = tokenizer(completion).input_ids
@@ -1724,27 +1778,27 @@ def get_samples(args, tokenizer: TokenizerLike) -> list[SampleRequest]:
             or args.hf_name in VisionArenaDataset.SUPPORTED_DATASET_PATHS
         ):
             dataset_class = VisionArenaDataset
-            args.hf_split = "train"
+            args.hf_split = args.hf_split if args.hf_split else "train"
             args.hf_subset = None
         elif (
             args.dataset_path in MMVUDataset.SUPPORTED_DATASET_PATHS
             or args.hf_name in MMVUDataset.SUPPORTED_DATASET_PATHS
         ):
             dataset_class = MMVUDataset
-            args.hf_split = "validation"
+            args.hf_split = args.hf_split if args.hf_split else "validation"
             args.hf_subset = None
         elif (
             args.dataset_path in InstructCoderDataset.SUPPORTED_DATASET_PATHS
             or args.hf_name in InstructCoderDataset.SUPPORTED_DATASET_PATHS
         ):
             dataset_class = InstructCoderDataset
-            args.hf_split = "train"
+            args.hf_split = args.hf_split if args.hf_split else "train"
         elif (
             args.dataset_path in MTBenchDataset.SUPPORTED_DATASET_PATHS
             or args.hf_name in MTBenchDataset.SUPPORTED_DATASET_PATHS
         ):
             dataset_class = MTBenchDataset
-            args.hf_split = "train"
+            args.hf_split = args.hf_split if args.hf_split else "train"
         elif (
             args.dataset_path in MultiModalConversationDataset.SUPPORTED_DATASET_PATHS
             or args.hf_name in MultiModalConversationDataset.SUPPORTED_DATASET_PATHS
@@ -1760,22 +1814,22 @@ def get_samples(args, tokenizer: TokenizerLike) -> list[SampleRequest]:
             or args.hf_name in AIMODataset.SUPPORTED_DATASET_PATHS
         ):
             dataset_class = AIMODataset
-            args.hf_split = "train"
+            args.hf_split = args.hf_split if args.hf_split else "train"
         elif (
             args.dataset_path in NextEditPredictionDataset.SUPPORTED_DATASET_PATHS  # noqa: E501
             or args.hf_name in NextEditPredictionDataset.SUPPORTED_DATASET_PATHS
         ):
             dataset_class = NextEditPredictionDataset
-            args.hf_split = "train"
+            args.hf_split = args.hf_split if args.hf_split else "train"
         elif (
             args.dataset_path in ASRDataset.SUPPORTED_DATASET_PATHS
             or args.hf_name in ASRDataset.SUPPORTED_DATASET_PATHS
         ):
             dataset_class = ASRDataset
-            args.hf_split = "train"
+            args.hf_split = args.hf_split if args.hf_split else "train"
         elif args.dataset_path in BlazeditDataset.SUPPORTED_DATASET_PATHS:
             dataset_class = BlazeditDataset
-            args.hf_split = "train"
+            args.hf_split = args.hf_split if args.hf_split else "train"
             hf_kwargs = {
                 "min_distance": args.blazedit_min_distance,
                 "max_distance": args.blazedit_max_distance,
@@ -1785,13 +1839,13 @@ def get_samples(args, tokenizer: TokenizerLike) -> list[SampleRequest]:
             or args.hf_name in MLPerfDataset.SUPPORTED_DATASET_PATHS
         ):
             dataset_class = MLPerfDataset
-            args.hf_split = "train"
+            args.hf_split = args.hf_split if args.hf_split else "train"
         elif (
             args.dataset_path in MMStarDataset.SUPPORTED_DATASET_PATHS
             or args.hf_name in MMStarDataset.SUPPORTED_DATASET_PATHS
         ):
             dataset_class = MMStarDataset
-            args.hf_split = "val"
+            args.hf_split = args.hf_split if args.hf_split else "val"
             args.hf_subset = None
         else:
             supported_datasets = set(
@@ -2260,6 +2314,7 @@ class BurstGPTDataset(BenchmarkDataset):
         lora_path: str | None = None,
         request_id_prefix: str = "",
         no_oversample: bool = False,
+        lora_assignment: str = "random",
         **kwargs,
     ) -> list[SampleRequest]:
         samples = []
@@ -2267,8 +2322,11 @@ class BurstGPTDataset(BenchmarkDataset):
         for i in range(num_requests):
             input_len = int(data[i][2])
             output_len = int(data[i][3])
-            lora_req = self.get_random_lora_request(
-                max_loras=max_loras, lora_path=lora_path
+            lora_req = self.get_lora_request(
+                index=i,
+                max_loras=max_loras,
+                lora_path=lora_path,
+                lora_assignment=lora_assignment,
             )
             vocab_size = tokenizer.vocab_size
             # Generate a synthetic prompt: a list of token IDs computed as (i +
